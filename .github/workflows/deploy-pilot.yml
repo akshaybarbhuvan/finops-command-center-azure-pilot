@@ -1,12 +1,18 @@
 # Deploys the APPLICATION (not infrastructure) to the pilot web app.
-# - Manual trigger only; never runs on pull requests.
-# - Uses GitHub OIDC federation (no stored Azure secrets). Configure repository/environment VARIABLES:
+# - Manual trigger only; never runs on pull requests or pushes. The run FAILS (not silently skips) unless the
+#   `confirm` input is exactly DEPLOY and the run is for main.
+# - Infrastructure (infra/*.bicep), Entra configuration, subscription access and database migrations are separate,
+#   operator-run phases (docs/DEPLOYMENT.md). This workflow does none of them.
+# - Uses GitHub OIDC federation (no stored Azure secrets). Configure environment (or repository) VARIABLES:
 #     AZURE_CLIENT_ID (deployment identity), AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, PILOT_RESOURCE_GROUP, PILOT_WEBAPP_NAME
-# - The `pilot` GitHub environment must require reviewer approval (Settings → Environments → pilot).
-# - The deployment identity needs "Website Contributor" on the pilot web app. Note: that role can also change app
+#   Federated credential subject: repo:<owner>/<repo>:environment:pilot
+# - The `pilot` GitHub environment must require reviewer approval and allow only the `main` branch
+#   (Settings → Environments → pilot). That restriction is the real control: this file's own checks can be edited.
+# - The deployment identity needs "Website Contributor" on the pilot web app only. That role can also change app
 #   settings and authentication configuration, so treat the identity and the `pilot` environment approvers as privileged.
-# - Actions are pinned to major-version tags; pin them to full commit SHAs when the repository is created.
-# Database migrations are a separate, explicit operator step (docs/DEPLOYMENT.md) and are NOT run here.
+# - The deploy job refuses a web app that lacks the fcc-workload tag set by infra/main.bicep, or whose subscription,
+#   resource group or name matches the separate FinThrive pilot.
+# - Actions are pinned to full commit SHAs (tag in the trailing comment).
 name: deploy-pilot
 
 on:
@@ -19,56 +25,96 @@ on:
 permissions:
   contents: read
 
+# One deployment at a time; a queued run waits instead of cancelling one that is deploying.
+concurrency:
+  group: deploy-pilot
+  cancel-in-progress: false
+
 jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/pilot
+      - name: Check confirmation and branch
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          REF: ${{ github.ref }}
+        run: node scripts/pilot/deploy-guard.mjs dispatch
+
   build:
-    # Only the protected default branch can be deployed. Also restrict the `pilot` environment to `main`
-    # (Settings → Environments → pilot → Deployment branches) so this holds even if the workflow file is edited.
-    if: github.event.inputs.confirm == 'DEPLOY' && github.ref == 'refs/heads/main'
+    needs: guard
+    # Defence in depth; the guard job already fails the run for any other branch.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Production dependency audit (fails on high or critical)
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run typecheck && npm run lint && npm test
       - run: npm run build:pilot
       - name: Package standalone server
         run: |
           cd .next-pilot/standalone
+          test -f server.js || { echo "::error::server.js missing from the standalone build"; exit 1; }
+          test -d .next-pilot/static || { echo "::error::static assets missing from the standalone build"; exit 1; }
           echo "${GITHUB_SHA}" > .fcc-version
           zip -qr "$GITHUB_WORKSPACE/fcc-pilot-${GITHUB_SHA}.zip" .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: fcc-pilot-${{ github.sha }}
           path: fcc-pilot-${{ github.sha }}.zip
+          if-no-files-found: error
           retention-days: 30
 
   deploy:
     needs: build
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: pilot
     permissions:
       contents: read
       id-token: write
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      PILOT_RESOURCE_GROUP: ${{ vars.PILOT_RESOURCE_GROUP }}
+      PILOT_WEBAPP_NAME: ${{ vars.PILOT_WEBAPP_NAME }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/pilot
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+      - name: Check deployment configuration
+        run: node scripts/pilot/deploy-guard.mjs config
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: fcc-pilot-${{ github.sha }}
-      - uses: azure/login@v2
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Confirm Azure context and target web app
+        id: target
+        run: node scripts/pilot/deploy-guard.mjs target
       - name: Deploy package
-        run: az webapp deploy --resource-group "${{ vars.PILOT_RESOURCE_GROUP }}" --name "${{ vars.PILOT_WEBAPP_NAME }}" --src-path "fcc-pilot-${{ github.sha }}.zip" --type zip --async false
-      - name: Smoke test (anonymous liveness only)
-        run: |
-          for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" "https://${{ vars.PILOT_WEBAPP_NAME }}.azurewebsites.net/api/health") && [ "$code" = "200" ] && echo "healthy" && exit 0
-            sleep 10
-          done
-          echo "Health check failed" && exit 1
+        run: az webapp deploy --resource-group "$PILOT_RESOURCE_GROUP" --name "$PILOT_WEBAPP_NAME" --src-path "fcc-pilot-${GITHUB_SHA}.zip" --type zip --async false
+      - name: Post-deployment checks (anonymous liveness and sign-in gate only)
+        run: node scripts/pilot/check-deployment.mjs --base-url "https://${{ steps.target.outputs.hostname }}" --attempts 30 --interval-ms 10000

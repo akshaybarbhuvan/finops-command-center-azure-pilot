@@ -18,20 +18,21 @@ Conventions: ⚠️ = changes Azure or Entra (may incur cost or grant access). �
 
 ## 2. Prerequisite checks (owner: cloud administrator) 🔒
 
+Read-only. Name the subscription explicitly on every command; do not rely on, or change, the CLI default subscription. Confirm that the subscription is the approved hosting subscription and **not the separate FinThrive pilot**.
 ```bash
 az login --tenant <tenant-id>
-az account set --subscription <hosting-subscription-id>
+az account show --subscription <hosting-subscription-id> --query "{tenant:tenantId, subscription:name, state:state}" -o table
 # Resource providers used by the pilot resources (register if "NotRegistered"):
 for p in Microsoft.Web Microsoft.Sql Microsoft.KeyVault Microsoft.OperationalInsights Microsoft.Insights Microsoft.Consumption; do
-  az provider show -n $p --query "{provider:namespace, state:registrationState}" -o tsv
+  az provider show -n $p --subscription <hosting-subscription-id> --query "{provider:namespace, state:registrationState}" -o tsv
 done
 ```
 ```powershell
 az login --tenant <tenant-id>
-az account set --subscription <hosting-subscription-id>
-"Microsoft.Web","Microsoft.Sql","Microsoft.KeyVault","Microsoft.OperationalInsights","Microsoft.Insights","Microsoft.Consumption" | ForEach-Object { az provider show -n $_ --query "{provider:namespace, state:registrationState}" -o tsv }
+az account show --subscription <hosting-subscription-id> --query "{tenant:tenantId, subscription:name, state:state}" -o table
+"Microsoft.Web","Microsoft.Sql","Microsoft.KeyVault","Microsoft.OperationalInsights","Microsoft.Insights","Microsoft.Consumption" | ForEach-Object { az provider show -n $_ --subscription <hosting-subscription-id> --query "{provider:namespace, state:registrationState}" -o tsv }
 ```
-⚠️ `az provider register -n <namespace>` registers a missing provider (subscription Contributor needed).
+⚠️ `az provider register -n <namespace> --subscription <hosting-subscription-id>` registers a missing provider (subscription Contributor needed). `npm run preflight:azure` (DEPLOYMENT step 5) repeats all of these checks and the what-if in one read-only run.
 
 Billing prerequisite for cost data (owner: billing administrator). This depends on the agreement type and **must be confirmed**:
 - **Enterprise Agreement:** the "Account owners can view charges" (AO view charges) setting must be **On**. An Enterprise Administrator sets it.
@@ -43,7 +44,7 @@ Billing prerequisite for cost data (owner: billing administrator). This depends 
 Microsoft Entra admin center → **Identity → Applications → App registrations → New registration**:
 
 1. **Name:** `FinOps Command Center (pilot)`. **Supported account types:** *Accounts in this organizational directory only (single tenant)*.
-2. **Redirect URI** (platform *Web*): `https://<web-app-name>.azurewebsites.net/.auth/login/aad/callback`. The web app name is an output of the infrastructure deployment (DEPLOYMENT.md step 6), so this URI can be added afterwards.
+2. **Redirect URI** (platform *Web*): `<webAppUrl>/.auth/login/aad/callback`, where `webAppUrl` is an output of the infrastructure deployment (DEPLOYMENT.md step 6), so this URI is added afterwards. Use the output, not a URL built from the app name: App Service may assign a unique default host name.
 3. **Authentication:** under *Implicit grant and hybrid flows*, select **ID tokens** (App Service Authentication sign-in).
 4. **App roles → Create app role**, four times. *Allowed member types* = Users/Groups. The **Value** must match exactly:
 
@@ -79,23 +80,44 @@ No Owner, Contributor or write role on any customer subscription is needed or re
 
 ### 4.2 People and pipelines
 
+**Ordinary resource deployment and operation** (creates or changes resources; grants nothing to anyone):
+
 | Task | Minimum role | Scope |
 |---|---|---|
-| Deploy `infra/main.bicep` | Contributor; plus **User Access Administrator** or **Role Based Access Control Administrator** if `assignKeyVaultRole=true` | Pilot resource group |
-| Store the Entra secret in Key Vault | Key Vault Secrets Officer (grant temporarily) | Pilot Key Vault |
-| Deploy `subscription-reader-access.bicep` | Owner or User Access Administrator | Each approved subscription |
-| Run database migrations and the grant script | Member of the SQL admin Entra group; Contributor on the SQL server for the temporary firewall rule | Pilot SQL server |
-| Deploy the application (GitHub Actions or CLI) | **Website Contributor** | Pilot web app |
-| Register the app, create app roles, assign users | Application Administrator (or Cloud Application Administrator) | Tenant |
+| Create the resource group; register resource providers | Contributor | Hosting subscription |
+| Run `npm run preflight:azure` / `what-if` | Reader is enough for the context checks; `what-if` needs Contributor-level deployment permission (`Microsoft.Resources/deployments/whatIf/action`) | Pilot resource group |
+| Deploy `infra/main.bicep` with `assignKeyVaultRole=false` | Contributor | Pilot resource group |
+| Temporary SQL firewall rule for migrations | Contributor (or SQL Server Contributor) | Pilot SQL server |
+| Run database migrations | Member of the SQL admin Entra group | FCC database |
+| Deploy the application (GitHub Actions identity or a person) | **Website Contributor** | Pilot web app only |
 | Billing view-charges settings | Enterprise Administrator (EA) / Billing profile owner (MCA) | Billing account |
+
+**Privileged: operations that grant access to other identities.** Each one needs its own approval and should be done by a different person from the one who deploys:
+
+| Task | What it grants | Minimum role | Scope |
+|---|---|---|---|
+| Deploy `infra/main.bicep` with `assignKeyVaultRole=true` (default) | Web app identity → Key Vault Secrets User | **User Access Administrator** or **Role Based Access Control Administrator**, in addition to Contributor | Pilot resource group |
+| Deploy `subscription-reader-access.bicep` | Web app identity → Reader + Cost Management Reader | **Owner** or **User Access Administrator** | Each approved subscription |
+| Assign Website Contributor to the deployment identity | GitHub workflow → deploy rights on the web app | Owner / User Access Administrator | Pilot web app |
+| Store the Entra secret in Key Vault | (Uses a temporary grant to the administrator) | Key Vault Secrets Officer, granted temporarily and removed afterwards | Pilot Key Vault |
+| Run `grant-app-identity.sql` | Web app identity → database read/write | Member of the SQL admin Entra group | FCC database |
+| Create the GitHub OIDC federated credential | GitHub `pilot` environment → the deployment identity | Application Administrator (or owner of that app registration) | Tenant |
+| Register the app, create app roles, assign users | Users → FCC roles | Application Administrator (or Cloud Application Administrator) | Tenant |
+
+Website Contributor can also change the web app's settings and authentication configuration. Treat the deployment identity and the `pilot` environment approvers as privileged.
 
 ### 4.3 GitHub Actions deployment identity (OIDC) ⚠️🔒
 
-Create a **separate** identity from the runtime identity (an app registration or a user-assigned managed identity) and add a federated credential:
-- Issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`.
-- Subject `repo:<github-org>/<repo>:environment:pilot`.
+The application is deployed by `.github/workflows/deploy-pilot.yml`. Infrastructure, Entra, subscription access and database steps are **not** in the workflow. Settings to create (step-by-step, with verification: [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md) §3, H1–H5):
 
-Grant it **Website Contributor** on the pilot web app only. That role can also change app settings and authentication, so treat the identity and the environment approvers as privileged. Then in GitHub → *Settings → Environments → pilot* add **required reviewers**, restrict **Deployment branches** to `main`, and set the variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `PILOT_RESOURCE_GROUP`, `PILOT_WEBAPP_NAME`. No client secret is stored in GitHub.
+1. A **separate** identity from the runtime identity (an app registration or a user-assigned managed identity), with **no client secret**.
+2. A federated credential on it: issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`, subject **`repo:akshaybarbhuvan/finops-command-center-azure-pilot:environment:pilot`**. The deploy job runs in the `pilot` environment, so a branch-based subject does not match.
+3. **Website Contributor** on the pilot **web app only**.
+4. GitHub → *Settings → Environments → pilot*: **required reviewers** (*Prevent self-review* on); **Deployment branches and tags** = selected branch `main`.
+5. GitHub → *Settings → Environments → pilot → Environment variables* (preferred) or repository variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `PILOT_RESOURCE_GROUP`, `PILOT_WEBAPP_NAME`. These are variables, not secrets, and no Azure secret is stored in GitHub.
+6. GitHub → *Settings → Branches*: protect `main` (pull request + review + `ci` checks). Anyone who can push to `main` can edit the workflow, so the environment's branch rule and reviewers are the controls that cannot be bypassed from a branch.
+
+Before deploying, the workflow checks that the five variables are well-formed and that the signed-in tenant and subscription match them. It also requires the target web app to carry the tag `fcc-workload=finops-command-center-azure-pilot` (set by `main.bicep`), and refuses FinThrive names. Missing settings fail the run with the name of what to fix.
 
 ## 5. Application configuration reference
 

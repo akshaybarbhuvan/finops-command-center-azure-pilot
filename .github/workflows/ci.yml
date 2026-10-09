@@ -30,7 +30,7 @@ jobs:
         # creating ~/.azure/bin/bicep (bicep.use_binary_from_path=if_found_in_ci). Resolve the binary that exists.
         run: |
           az bicep install
-          if [ -x "$HOME/.azure/bin/bicep" ]; then BICEP_BIN="$HOME/.azure/bin/bicep"; else BICEP_BIN="$(command -v bicep)"; fi
+          if [ -x "$HOME/.azure/bin/bicep" ]; then BICEP_BIN="$HOME/.azure/bin/bicep"; else BICEP_BIN="$(command -v bicep || true)"; fi
           if [ -z "$BICEP_BIN" ] || [ ! -x "$BICEP_BIN" ]; then echo "::error::Bicep CLI not found after az bicep install"; exit 1; fi
           "$BICEP_BIN" --version
           echo "BICEP_BIN=$BICEP_BIN" >> "$GITHUB_ENV"
@@ -49,6 +49,7 @@ jobs:
           node-version-file: .nvmrc
       - run: npm ci
       - name: Production dependency audit
-        # Known, accepted exception recorded in docs/PILOT_READINESS_REPORT.md (postcss bundled by next; build-time only).
-        # Fails on critical; high findings are reported for the reviewer.
-        run: npm audit --omit=dev --audit-level=critical
+        # Fails on high or critical findings in production dependencies (what ships to App Service).
+        # Open moderate (DEP-3) and build-tool (DEP-2) findings are NOT risk-accepted: they are tracked in
+        # docs/PILOT_READINESS_REPORT.md §5a and need a recorded decision by the security owner and business sponsor.
+        run: npm audit --omit=dev --audit-level=high

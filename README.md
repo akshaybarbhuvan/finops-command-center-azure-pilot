@@ -15,7 +15,8 @@ A pilot build cannot contain or fall back to demo data or demo sign-in: only `*.
 
 1. [docs/LEADER_HANDOFF.md](docs/LEADER_HANDOFF.md) — what is delivered, approvals, responsibilities, sequence to go/no-go
 2. [docs/AZURE_SETUP.md](docs/AZURE_SETUP.md) — Entra app registration, roles, minimum Azure permissions, configuration reference
-3. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — step-by-step deployment (local validation → what-if → infra → database → app)
+3. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — step-by-step deployment (local validation → preflight/what-if → infra → access → database → app)
+   - [docs/DEPLOYMENT_CHECKLIST.md](docs/DEPLOYMENT_CHECKLIST.md) — STOP/GO gates, approvals and the GitHub/Azure settings to configure and verify
 4. [docs/SECURITY.md](docs/SECURITY.md) — authentication, authorization, controls, residual risks
 5. [docs/OPERATIONS.md](docs/OPERATIONS.md) — refresh, health, troubleshooting, monitoring, backup
 6. [docs/ROLLBACK_AND_RECOVERY.md](docs/ROLLBACK_AND_RECOVERY.md) — application, database and infrastructure recovery
@@ -33,6 +34,9 @@ Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Changes from the ori
 | Full offline validation (type check, lint, tests, Bicep, pilot build, bundle scan, server smoke tests) | `npm run validate:pilot` | local; set `BICEP_BIN` if `bicep` is not on PATH |
 | Tests only | `npm test` (all) · `npm run test:pilot` | local |
 | Build the pilot | `npm run build:pilot` → `.next-pilot/standalone` | local |
+| Validate the deployment parameters file | `npm run preflight:azure -- --params-only --parameters infra/main.parameters.json` | local |
+| Infrastructure preflight (explicit tenant/subscription/resource group, providers, FinThrive guard, what-if) | `npm run preflight:azure -- --tenant … --subscription … --resource-group … --location … --parameters …` | 🔎 reads Azure only; never deploys |
+| Deploy the application | GitHub → *Actions → deploy-pilot → Run workflow* on `main`, confirm `DEPLOY`, then approve the `pilot` environment | ⚠️ deploys to the pilot web app |
 | Apply database migrations | `npm run db:migrate` | ⚠️ changes the target database |
 | One refresh from a workstation | `npm run sync:pilot` | reads Azure with your CLI sign-in; writes the FCC database |
 | Local validation database with synthetic fixtures | `FCC_FIXTURES_CONFIRM=local-only FCC_SQLITE_PATH=./.data/pilot-local.db npm run dev:fixtures` | local only; refused on App Service and Azure SQL |

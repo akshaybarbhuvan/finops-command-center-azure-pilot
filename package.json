@@ -22,6 +22,7 @@
     "db:migrate": "tsx --conditions=react-server scripts/pilot/migrate.ts",
     "sync:pilot": "tsx --conditions=react-server scripts/pilot/sync.ts",
     "validate:pilot": "node scripts/pilot/validate-pilot.mjs",
+    "preflight:azure": "node scripts/pilot/azure-preflight.mjs",
     "test:pilot": "vitest run tests/pilot",
     "dev:fixtures": "tsx --conditions=react-server scripts/pilot/dev-load-fixtures.ts"
   },
@@ -59,6 +60,10 @@
     "zod": "^3.25.76"
   },
   "overrides": {
-    "react-is": "$react-is"
+    "react-is": "$react-is",
+    "next": {
+      "postcss": "$postcss"
+    },
+    "postcss-selector-parser": "^7.1.6"
   }
 }

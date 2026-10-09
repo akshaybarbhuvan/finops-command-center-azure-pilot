@@ -6,7 +6,8 @@
 |---|---|
 | Code, documentation and **local/offline validation** | **READY FOR CONTROLLED PILOT REVIEW.** Review and planning only: all automated checks pass locally (§3) |
 | **Live Azure validation** (Entra sign-in, Resource Graph, Cost Management, Advisor, Azure SQL) | **NOT PERFORMED.** Not live-Azure-validated |
-| **Deployment / production approval** | **NOT APPROVED.** Deployment is blocked until (a) the open dependency findings in §5a are remediated or **formally risk-accepted** by the accountable owner, and (b) the live acceptance checks (PILOT_RUNBOOK §2) pass |
+| **Repository deployment tooling** | **READY AFTER PREREQUISITES.** The deployment workflow, infrastructure preflight and runbooks are in place and tested offline (§3b). The external GitHub, Entra and Azure settings in DEPLOYMENT_CHECKLIST §3 are **not configured or verified**. `deploy-pilot` has **never run** and no Azure deployment has happened |
+| **Deployment / production approval** | **NOT APPROVED.** Deployment is blocked until (a) decisions D1–D6 and the dependency decisions for the two open findings, DEP-2 and DEP-3 (§5a), are recorded by their owners, (b) the gates in DEPLOYMENT_CHECKLIST §5 are GO, and (c) the live acceptance checks (PILOT_RUNBOOK §2) pass |
 
 **Correction to the previous version of this report.** It stated that "no critical or high defects remain open" and described the PostCSS advisory as "build-time only". Neither statement is supported by the evidence:
 - `npm audit` reports **unresolved high-severity findings**: 8 high in the full tree, including **1 high in production dependencies** (§5a). None of them is fixed or closed.
@@ -14,7 +15,7 @@
 
 The application is **locally validated only**. It is **not** live-Azure-validated and **not** approved for production or pilot deployment.
 
-Report date: 2026-10-09. Source: supplied `FINOPS_COMMAND_CENTER_LOCAL_DEMO.zip` (SHA-256 `5bb5e0cd…a9693`, preserved unchanged). Git is deliberately deferred; changes are listed in [CHANGE_MANIFEST.md](CHANGE_MANIFEST.md).
+Report date: 2026-10-09. Source: supplied `FINOPS_COMMAND_CENTER_LOCAL_DEMO.zip` (SHA-256 `5bb5e0cd…a9693`, preserved unchanged). The initial implementation is listed in [CHANGE_MANIFEST.md](CHANGE_MANIFEST.md). The code now lives in the GitHub repository `akshaybarbhuvan/finops-command-center-azure-pilot`; later changes are tracked in Git history and pull requests (§3b).
 
 ## 1. Baseline (before changes, observed)
 
@@ -62,6 +63,26 @@ The same counts and versions were reproduced in the implementation workspace wit
 
 Offline means: connectors were exercised through the real client code against **deterministic fixtures**, and the server ran on **SQLite** with a **simulated App Service identity header**. These results do **not** prove live Azure connectivity, Entra sign-in or Azure SQL behaviour.
 
+### 3b. Deployment-readiness update (2026-10-09, branch `claude/github-actions-ci-failure-ytdv79`, observed in a Linux sandbox)
+
+Changes: dependency remediation (DEP-1, DEP-4), CI audit gate raised to `high`, `deploy-pilot.yml` hardened (R-11), read-only `npm run preflight:azure`, workload tag and `publicOriginConfigured` output in `main.bicep`, `principalId` validation in `subscription-reader-access.bicep`, documentation aligned with the workflow, and a new [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md).
+
+| Check | Result |
+|---|---|
+| `npm ci` from a clean `node_modules`; `npm ls` | success; dependency tree valid |
+| `npm run typecheck` / `npm run lint` | pass / pass (0 warnings) |
+| `npm test` | **18 files, 242/242 passed** (including the new `tests/pilot/deploy-scripts.test.ts`, 36 tests: confirmation/branch gate, variable validation, signed-in context, workload tag, FinThrive deny rules, `FCC_PUBLIC_ORIGIN` check, missing `az`, health retry/failure, sign-in gate, preflight STOP/GO paths with a stubbed Azure CLI, workflow/template contracts) |
+| `npm run validate:demo` | **READY 9/9** |
+| `npm run validate:pilot` (`BICEP_BIN` resolved by the CI step itself) | **PASSED 19/19** |
+| Bicep 0.48.1 `build` + `lint`, both templates | pass, no warnings |
+| `npm audit --omit=dev --audit-level=high` (CI and deploy gate) | pass: production **0 high, 0 critical**, 3 moderate (DEP-3 chain: `sprintf-js`, `tedious`, `mssql`) |
+| `npm audit` (full tree) | 10: **7 high** (DEP-2 chain: `braces`, `micromatch`, `fast-glob`, `chokidar`, `tailwindcss`, `@next/eslint-plugin-next`, `eslint-config-next`) and 3 moderate (DEP-3 chain). Before: 14 (8 high, 6 moderate) |
+| Compiled CSS before/after the overrides (pilot and demo) | byte-identical (SHA-256 `66cc4bfb…`) |
+| `check-deployment.mjs` against the real standalone pilot server (local fixtures) | pass: health 200 and anonymous `/overview` → 307 to `/.auth/login/aad` |
+| actionlint 1.7.12 with ShellCheck 0.11.0, both workflows | clean |
+| Mutation checks (the guard accepting `deploy`, the post-deploy check skipping the sign-in gate) | both caught by the new tests |
+| `deploy-pilot` against Azure, `preflight:azure` against a real subscription | **Not run** (no Azure access; deliberately out of scope) |
+
 ## 4. Live Azure verification
 
 | Item | Status |
@@ -72,7 +93,8 @@ Offline means: connectors were exercised through the real client code against **
 | Advisor recommendations and savings fields | **Pending** |
 | Azure SQL migrations, grant script and runtime queries | **Pending** (highest priority; tested only with a mocked driver) |
 | Bicep `what-if` and deployment | **Pending** (needs an authorized session) |
-| GitHub CI and deploy workflows | **Not run** (no repository yet) |
+| GitHub CI (`ci`) | **Run on GitHub-hosted runners**: green on `main` (merge of PR #1, run 37977969477), including Bicep build/lint and `validate:pilot` 19/19 |
+| GitHub deployment workflow (`deploy-pilot`) | **Never run.** Its gates are tested offline with a stubbed Azure CLI (§3b); the `pilot` environment, variables and OIDC federation are not verified |
 
 ## 5. Independent review — issues, fixes and retests
 
@@ -89,8 +111,8 @@ The review was done by a separate reviewer with no part in writing the code. It 
 | R-7 | Low | `queries/*` | Some totals were not limited to currently approved subscriptions | Code | Approved-subscription filter in lists, detail, actions, export, pipeline, verified savings, inventory, resources | New tests ✓ |
 | R-8 | Low | `queries/portfolio.ts` | Open-estimate total included recommendations Advisor no longer returns; reservation overlap not flagged | Code | `not_returned` excluded from totals (count shown separately); reservation/savings-plan overlap documented | New test ✓ |
 | R-9 | Low | `workflow/rules.ts` | 13-digit amounts overflow BIGINT micros (500 instead of 400) | Code | Capped at 12 integer digits | New test ✓ |
-| R-10 | **High** (production dependency) + moderate | dependencies | Unresolved `npm audit` findings: see the register in §5a (DEP-1 … DEP-4) | Audit output (§3, §3a) | **Not fixed.** `npm audit fix` did not resolve them; the offered fixes are breaking upgrades (`--force`), which were deliberately not applied. **No formal risk acceptance has been recorded** | **Open**: owner and next actions in §5a |
-| R-11 | Low | `deploy-pilot.yml` | Tag-pinned actions; any branch could be dispatched; deploy role is privileged | Code | Deploy job limited to `main`; docs require environment branch restriction and reviewers; SHA pinning documented for the Git phase | Workflow syntax reviewed; **not run** |
+| R-10 | **High** (production dependency) + moderate | dependencies | `npm audit` findings: see the register in §5a (DEP-1 … DEP-4) | Audit output (§3, §3a, §3b) | **DEP-1 and DEP-4 remediated** with scoped npm `overrides` (no major upgrade of a direct dependency; compiled CSS byte-identical). DEP-2 and DEP-3 have **no patched release**; DEP-3 call-site review completed. **No formal risk acceptance has been recorded** for DEP-2 or DEP-3 | **Partly closed**: production has no high/critical findings; DEP-2/DEP-3 decisions pending (§5a) |
+| R-11 | Low | `deploy-pilot.yml` | Tag-pinned actions; any branch could be dispatched; a wrong confirmation silently skipped the run; health check used a guessed `<name>.azurewebsites.net` URL; no check of the signed-in context or target | Code | Actions pinned to full commit SHAs. `guard` job fails (not skips) unless `confirm` = `DEPLOY` on `main`. Variables validated before login. Signed-in tenant and subscription, workload tag, FinThrive deny rules and `FCC_PUBLIC_ORIGIN` checked against the real web app. Post-deployment check uses the app's actual default host name and also verifies the Entra sign-in redirect. Concurrency limited to one deployment | `tests/pilot/deploy-scripts.test.ts` (stubbed `az`), actionlint 1.7.12 clean; **workflow not run against Azure** |
 | R-12 | Low | `main.bicep`, `config.ts` | Origin fixed to `*.azurewebsites.net`; sovereign-cloud SQL hosts accepted but ARM public only | Code | `publicOrigin` parameter; SQL host restricted to public cloud; scope documented | Bicep build ✓, config test ✓ |
 | R-13 | Low | `main.bicep` | SQL allows Azure services; public endpoints | Code | **Accepted for pilot** (Entra-only SQL, TLS, auditing); private networking recommended for production | Documented in SECURITY §6 |
 | R-14 | Low | `http/api.ts` | Body read fully before the size check when chunked | Code | Streaming read with a 32 KB cap | API tests ✓ |
@@ -103,9 +125,9 @@ The review was done by a separate reviewer with no part in writing the code. It 
 | I-5 | Low | `.nvmrc` | Node 20 is end-of-life | — | Node 22 LTS | ✓ |
 | I-6 | Low | Next.js build | `pageExtensions` build warns it cannot copy client manifests for API routes | Build log | Verified harmless: the standalone server serves all routes (smoke tests) | ✓ |
 
-**Open high: R-10 / DEP-1** (production dependency, unresolved; formal risk acceptance or remediation required before deployment), plus DEP-2 (high, dev/build tooling). Open critical: none reported by `npm audit`. Code-review defects R-1 … R-16 and I-1 … I-6 are fixed or have a recorded disposition. Open medium items needing a decision or live evidence: R-2 (live query plan), R-3 (verification policy), DEP-3 (production, moderate).
+**Open high: DEP-2** (`braces`, development/build tooling only, not in the deployed package; no patched release exists; decision required). Production dependencies: **no high or critical** findings (DEP-1 remediated); CI and the deploy build now fail on any. Open critical: none. Code-review defects R-1 … R-16 and I-1 … I-6 are fixed or have a recorded disposition. Open medium items needing a decision or live evidence: R-2 (live query plan), R-3 (verification policy), DEP-3 (production, moderate; not reachable per the call-site review; decision required).
 
-## 5a. Dependency vulnerability register (unresolved)
+## 5a. Dependency vulnerability register
 
 Source: `npm audit` and `npm audit --omit=dev` (§3, §3a). The 14 audit entries come from **four vulnerable packages**; the other entries are packages flagged *because they depend on* one of those four. Transitive findings are not dismissed: each is assessed for whether it ships in the deployed artifact and how it could be reached.
 
@@ -113,25 +135,25 @@ Source: `npm audit` and `npm audit --omit=dev` (§3, §3a). The 14 audit entries
 
 | ID | Vulnerable package (version) | Severity | Dependency type | Pulled in by | Ships in deployed package? | Practical impact for FCC | Mitigation in place | Owner / next action | Status |
 |---|---|---|---|---|---|---|---|---|---|
-| **DEP-1** | `postcss` **8.4.31** (nested under `next@15.5.27`; root `postcss` is 8.5.29 and not flagged) | **High.** Advisories: XSS via unescaped `</style>` in CSS stringify output; arbitrary file read / path traversal via attacker-controlled `sourceMappingURL` (including incomplete-fix follow-ups) | **Production** (`next` is a runtime dependency) | `next` | **Yes**: `node_modules/next/node_modules/postcss` is in the standalone package | Exploitation requires PostCSS to process attacker-controlled CSS or source maps. FCC accepts no CSS, source maps or file paths from users, and its CSS is compiled from repository sources at build time. Whether the Next.js server invokes this PostCSS copy at runtime has **not** been established, so runtime reachability cannot be ruled out | No user-supplied CSS processed; CSP; App Service authentication in front of all pages | **Engineering lead:** (1) check for a Next.js 15.x patch that updates the nested PostCSS and test it on a branch; (2) otherwise plan the major upgrade (`npm audit` offers only Next 16 via `--force`) as its own tested change; (3) until then, **security owner / business sponsor must formally accept the risk in writing before deployment** | **Open** |
-| **DEP-2** | `braces` 3.0.3 | **High.** Stack-exhaustion denial of service through deeply nested brace patterns | **Development / build only** | `micromatch`, `chokidar` → `fast-glob`, `tailwindcss`, `@next/eslint-plugin-next` → `eslint-config-next` (these account for **7 of the 8 high entries**) | **No** (not in the standalone package) | Affects developer machines and CI when building or linting. Input is glob patterns from repository configuration. A malicious contribution (for example a pull request) could at worst stall a build or CI job; no runtime exposure | CI runs in ephemeral runners with timeouts; code review of configuration changes | **Engineering lead:** track `tailwindcss` / `eslint-config-next` / `micromatch` releases; upgrade in a tested change; record acceptance for the build environment | **Open** |
-| **DEP-3** | `sprintf-js` 1.1.3 | **Moderate.** Denial of service through unbounded precision specifiers | **Production** | `tedious@18.6.2` → `mssql@11.0.2` (`tedious` and `mssql` are flagged as moderate because of it) | **Yes**: in the standalone package and used by the Azure SQL driver at runtime | Exploitation requires an attacker-controlled **format string**. The `tedious` call sites inspected (`login7-payload.js`, `metadata-parser.js`) use fixed format literals with values passed as arguments. This inspection was a sample, not a full audit, so impact is believed low but **not formally confirmed** | Database is reachable only with Entra authentication; FCC never passes user input as a format string | **Engineering lead:** check `mssql` / `tedious` releases that drop or patch `sprintf-js`; complete the call-site review; record acceptance | **Open** |
-| **DEP-4** | `postcss-selector-parser` 6.1.4 | **Moderate.** Quadratic-complexity CPU exhaustion in selector parsing | **Development / build only** | `postcss-nested` → `tailwindcss` | **No** | Build-time processing of repository CSS only; worst case is a slow build from a malicious contribution | Code review; CI timeouts | Engineering lead: upgrade with `tailwindcss`; record acceptance for the build environment | **Open** |
-| — | `next` 15.5.27 | Moderate (by dependency on DEP-1) | Production | — | Yes | See DEP-1 | — | See DEP-1 | Open |
+| **DEP-1** | `postcss` 8.4.31 (nested under `next@15.5.27`, which pins it exactly; no Next.js 15.x release updates it) | **High.** XSS via unescaped `</style>` in CSS stringify output; arbitrary `.map` file read / path traversal via attacker-controlled `sourceMappingURL` (GHSA-qx2v-qp2m-jg93, GHSA-6g55-p6wh-862q, GHSA-fxqj-rqcc-2cmp, GHSA-r28c-9q8g-f849) | Production | `next` | Previously yes | — | **Remediated:** `package.json` `overrides` → `"next": { "postcss": "$postcss" }` (8.5.29, same major line, not affected). Verified: `npm ls` valid; the standalone package ships 8.5.29 and no nested 8.4.31; pilot and demo compiled CSS byte-identical to before (SHA-256 `66cc4bfb…`); full test and smoke suite pass (§3b) | Engineering lead: drop the override when a Next.js release ships a fixed PostCSS | **Remediated** (no acceptance needed) |
+| **DEP-2** | `braces` 3.0.3 (**latest published version; no patched release exists**) | **High.** Stack-exhaustion denial of service through deeply nested brace patterns (GHSA-vfj7-8cjw-p6xm) | **Development / build only** | `micromatch`, `chokidar` → `fast-glob`, `tailwindcss` 3.4.19, `@next/eslint-plugin-next` → `eslint-config-next` (**all 7 remaining high entries**) | **No** (not in the standalone package) | Affects developer machines and CI when building or linting. Input is glob patterns from repository configuration; a malicious contribution could at worst stall a build or CI job. No runtime exposure | CI runs in ephemeral runners with timeouts and read-only permissions; `main` protection and review of configuration changes (DEPLOYMENT_CHECKLIST H1) | **Only remedies:** Tailwind CSS 4 (a rewrite of the styling configuration, a separate project) and an `eslint-config-next` downgrade to 14.x (not acceptable). **Security owner + sponsor: decide (accept for the build environment with review date, or remediate first)** | **Open: decision required** |
+| **DEP-3** | `sprintf-js` 1.1.3 (**latest published version; no patched release exists**) | **Moderate.** Denial of service through unbounded precision specifiers in the **format string** (GHSA-hp3w-g68c-fv3c) | **Production** | `tedious@18.6.2` → `mssql@11.0.2` (`tedious` and `mssql` are flagged as moderate because of it). The newest `tedious` (20.x) and `mssql` (12.x) still depend on it, so upgrading does not help | **Yes**: in the standalone package, used by the Azure SQL driver | **Call-site review complete (2026-10-09):** all 12 `sprintf` calls in `tedious/lib` (`login7-payload.js` ×4, `packet.js` ×3, `metadata-parser.js` ×2, `value-parser.js` ×2, `prelogin-payload.js` ×1) use **string-literal** format strings with fixed precision (`%d`, `%s`, `%02X`, `%04X`, `%08X`); `mssql/lib` and FCC code never call `sprintf`. The vulnerable path is therefore not reachable from FCC inputs | Database reachable only with Entra authentication; no user input reaches a format string | **Security owner + sponsor: decide (accept with review date, or require a driver change)**. Engineering: re-run the call-site grep on any `tedious` upgrade | **Open: decision required** |
+| **DEP-4** | `postcss-selector-parser` 6.1.4 | **Moderate.** Quadratic-complexity CPU exhaustion in selector parsing (GHSA-rj75-hqrm-r3gf) | Development / build only | `postcss-nested` → `tailwindcss` | No | — | **Remediated:** `overrides` → `"postcss-selector-parser": "^7.1.6"`. The only 7.0 breaking change is "insertions during iteration are safe". Verified: compiled CSS for both builds is byte-identical to the 6.1.4 output; full suite passes | Engineering lead: re-check compiled CSS whenever Tailwind is upgraded | **Remediated** (no acceptance needed) |
+| — | `next` 15.5.27 | Previously moderate (by dependency on DEP-1) | Production | — | Yes | See DEP-1 | — | — | Remediated with DEP-1 |
 | — | `mssql` 11.0.2, `tedious` 18.6.2 | Moderate (by dependency on DEP-3) | Production | — | Yes | See DEP-3 | — | See DEP-3 | Open |
-| — | `postcss-nested` 6.2.0 | Moderate (by dependency on DEP-4) | Development / build only | `tailwindcss` | No | See DEP-4 | — | See DEP-4 | Open |
+| — | `postcss-nested` 6.2.0 | Previously moderate (by dependency on DEP-4) | Development / build only | `tailwindcss` | No | See DEP-4 | — | — | Remediated with DEP-4 |
 | — | `micromatch`, `fast-glob`, `chokidar`, `tailwindcss`, `@next/eslint-plugin-next`, `eslint-config-next` | High (by dependency on DEP-2) | Development / build only | — | No | See DEP-2 | — | See DEP-2 | Open |
 
-**CI configuration note (conflict, not changed in this documentation-only update).** `.github/workflows/ci.yml` runs `npm audit --omit=dev --audit-level=critical`, so CI **does not fail** on these high or moderate findings. Its inline comment calls the PostCSS finding a "known, accepted exception … build-time only". That description is inaccurate (DEP-1 ships in the deployed package), and no acceptance has been recorded. The comment and gate should be corrected in a separate, reviewed change to CI configuration.
+**CI configuration (corrected).** `.github/workflows/ci.yml` and the `deploy-pilot` build now run `npm audit --omit=dev --audit-level=high`, so any high or critical production finding fails the pipeline. The earlier comment calling the PostCSS finding a "known, accepted exception … build-time only" has been removed: it was inaccurate, and no acceptance had been recorded. Remaining findings after this change: full tree 10 (7 high, 3 moderate: DEP-2 and DEP-3 chains); production 3 moderate (DEP-3 chain).
 
-**Formal risk acceptance required before deployment.** For each open DEP item, the accountable owner (security owner together with the business sponsor) must record: decision (accept / remediate first), justification, compensating controls, expiry or review date, and signature. Record it in the table below. Until then, deployment is not approved.
+**Formal decision required before deployment for DEP-2 and DEP-3.** For each open DEP item, the accountable owner (security owner together with the business sponsor) must record: decision (accept / remediate first), justification, compensating controls, expiry or review date, and signature. Record it in the table below. Until then, deployment is not approved.
 
 | ID | Decision | Accepted / decided by | Date | Review / expiry date |
 |---|---|---|---|---|
-| DEP-1 | Pending | | | |
+| DEP-1 | Remediated in the repository (no acceptance required) | Engineering (pull request) | 2026-10-09 | Re-check on each Next.js upgrade |
 | DEP-2 | Pending | | | |
 | DEP-3 | Pending | | | |
-| DEP-4 | Pending | | | |
+| DEP-4 | Remediated in the repository (no acceptance required) | Engineering (pull request) | 2026-10-09 | Re-check on each Tailwind upgrade |
 
 ## 6. Acceptance criteria (mandate §17)
 
@@ -154,7 +176,7 @@ Source: `npm audit` and `npm audit --omit=dev` (§3, §3a). The 14 audit entries
 | 15 | No remediation operations | ✓ Verified | separation test (no write verbs) |
 | 16 | Infrastructure documented and validated where possible | ✓ Bicep build/lint; what-if **pending** | — |
 | 17 | No secrets committed | ✓ | §7 scan |
-| — | No unresolved critical/high security finding (merge/deployment gate) | ✗ **Not met**: DEP-1 (high, production) and DEP-2 (high, build tooling) open | §5a |
+| — | No unresolved critical/high security finding (merge/deployment gate) | ◐ **Production met** (no high/critical; enforced by CI). **Not met overall:** DEP-2 (high, build tooling only) open, pending decision | §5a |
 | 18 | Results recorded accurately | ✓ (corrected 2026-10-09; see Status) | this report |
 | 19 | Independent review | ✓ | §5 |
 | 20 | Docs match implementation | ✓ (cross-checked by reviewer; R-5 fixed) | — |
@@ -180,7 +202,7 @@ Live acceptance results (PILOT_RUNBOOK §2, to be completed by testers):
 | Live validation A1–A17, starting with Azure SQL (A17) | Application engineer + pilot testers | Before go/no-go |
 | Verification policy D3 (R-3, R-15) | FinOps product owner | Before go/no-go |
 | Billing view-charges confirmation (D6) | Billing administrator | Before live cost test |
-| DEP-1 … DEP-4: remediation plan (Next.js patch or major upgrade; `tailwindcss` / ESLint tooling; `mssql` / `tedious`) | Engineering lead | Plan within 30 days |
-| **Formal risk acceptance or remediation of DEP-1 … DEP-4** (§5a) | Security owner + business sponsor | **Before any deployment** |
-| Correct the CI audit gate and comment (§5a note) | Engineering lead + Git repository administrator | With the Git/CI setup |
+| DEP-2 / DEP-3: track upstream fixes (`braces`, `sprintf-js`); plan the Tailwind CSS 4 migration as its own change | Engineering lead | Review monthly |
+| **Formal decision on DEP-2 and DEP-3** (§5a) | Security owner + business sponsor | **Before any deployment** |
+| GitHub and Azure settings H1–H15 (DEPLOYMENT_CHECKLIST §3) | Repository admin, Entra admin, cloud admin, SQL admin | Before gate G2/G5 |
 | R-13 private networking for production | Cloud architect | Before any production use |
