@@ -78,19 +78,23 @@ if (mode === "dispatch") {
   if (!hasWorkloadTag(s.tags)) error(`Web app ${env.PILOT_WEBAPP_NAME} does not carry the tag ${WORKLOAD_TAG}=${WORKLOAD_TAG_VALUE}, so it is not a resource created by infra/main.bicep. Refusing to deploy. Re-deploy infra/main.bicep (it adds the tag) or correct PILOT_WEBAPP_NAME.`);
   const host = s.defaultHostName;
   if (!host || !/^[a-z0-9.-]+$/i.test(host)) error(`Web app ${env.PILOT_WEBAPP_NAME} reports no usable default host name.`);
-  // FCC_PUBLIC_ORIGIN drives the CSRF origin check; if it is not one of the app's real host names every change is rejected.
+  // FCC_PUBLIC_ORIGIN drives the CSRF origin check, so it must be exactly an https origin (the rule in src/pilot/config.ts)
+  // whose host is one of the host names Azure reports for this app; otherwise every change is rejected as cross-site.
   // Only that one setting is read and printed; other app settings are never logged.
   const settings = az(["webapp", "config", "appsettings", "list", "--resource-group", env.PILOT_RESOURCE_GROUP, "--name", env.PILOT_WEBAPP_NAME, "--query", "[?name=='FCC_PUBLIC_ORIGIN'].value | [0]"]);
   if (!settings.ok) error(`Could not read FCC_PUBLIC_ORIGIN from the web app settings (${settings.detail}).`);
   else {
-    let originHost = "";
+    const configured = `${settings.value ?? ""}`.trim().replace(/\/$/, "");
+    let url = null;
     try {
-      originHost = new URL(`${settings.value ?? ""}`).host.toLowerCase();
+      url = new URL(configured);
     } catch {
       /* reported below */
     }
     const hostNames = (s.hostNames ?? [host]).map((h) => `${h}`.toLowerCase());
-    if (!originHost || !hostNames.includes(originHost)) error(`FCC_PUBLIC_ORIGIN (${settings.value || "unset"}) is not a host name of ${env.PILOT_WEBAPP_NAME} (${hostNames.join(", ")}). Set the Bicep parameter publicOrigin to https://${host} (or the custom domain) and re-deploy the infrastructure; otherwise every change is rejected as cross-site.`);
+    const fix = `Leave the Bicep parameter publicOrigin empty to use the Azure-assigned host name (https://${host}), or set it to the custom domain bound to the app, then re-deploy infra/main.bicep; otherwise every change is rejected as cross-site.`;
+    if (!url || url.protocol !== "https:" || url.origin !== configured) error(`FCC_PUBLIC_ORIGIN (${configured || "unset"}) must be exactly an https origin such as https://${host} (no path or query). ${fix}`);
+    else if (!hostNames.includes(url.host.toLowerCase())) error(`FCC_PUBLIC_ORIGIN (${configured}) does not match the web app's actual host names (${hostNames.join(", ")}). ${fix}`);
   }
   if (s.httpsOnly !== true) error(`Web app ${env.PILOT_WEBAPP_NAME} is not HTTPS-only; infra/main.bicep sets httpsOnly=true. Re-deploy the infrastructure before deploying the application.`);
   if (!errors.length && env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, `hostname=${host}\n`);

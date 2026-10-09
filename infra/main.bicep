@@ -50,7 +50,7 @@ param syncIntervalMinutes int = 360
 @description('Advisor categories to ingest (comma separated).')
 param advisorCategories string = 'Cost'
 
-@description('Public https origin users browse to, e.g. https://fcc.contoso.com. Leave empty to use https://<web-app-name>.azurewebsites.net. Must match exactly, or every change is rejected as cross-site.')
+@description('Public https origin users browse to when a custom domain is used, e.g. https://fcc.contoso.com. Leave empty to use the default host name that Azure assigns to the web app (read from the deployed site, not built from its name). Must match exactly, or every change is rejected as cross-site.')
 param publicOrigin string = ''
 
 @description('Display label shown in the header (generic; do not include confidential names unless approved).')
@@ -90,7 +90,6 @@ var names = {
   sql: '${namePrefix}-sql-${suffix}'
   db: 'fcc'
 }
-var effectivePublicOrigin = empty(publicOrigin) ? 'https://${names.site}.azurewebsites.net' : publicOrigin
 var keyVaultSecretsUser = '4633458b-17de-408a-b874-0445c86b69e6'
 var entraSecretName = 'entra-auth-client-secret'
 
@@ -226,28 +225,38 @@ resource site 'Microsoft.Web/sites@2023-12-01' = {
       http20Enabled: true
       healthCheckPath: '/api/health'
       remoteDebuggingEnabled: false
-      appSettings: [
-        { name: 'APP_MODE', value: 'pilot' }
-        { name: 'FCC_BUILD_TARGET', value: 'pilot' }
-        { name: 'NODE_ENV', value: 'production' }
-        { name: 'FCC_AUTH_MODE', value: 'appservice' }
-        { name: 'FCC_ENTRA_TENANT_ID', value: tenantId }
-        { name: 'FCC_AZURE_SUBSCRIPTION_IDS', value: approvedSubscriptionIds }
-        { name: 'FCC_PUBLIC_ORIGIN', value: effectivePublicOrigin }
-        { name: 'FCC_ORG_LABEL', value: orgLabel }
-        { name: 'FCC_DB_DIALECT', value: 'mssql' }
-        { name: 'FCC_SQL_SERVER', value: '${names.sql}${environment().suffixes.sqlServerHostname}' }
-        { name: 'FCC_SQL_DATABASE', value: names.db }
-        { name: 'FCC_ADVISOR_CATEGORIES', value: advisorCategories }
-        { name: 'FCC_SYNC_INTERVAL_MINUTES', value: string(syncIntervalMinutes) }
-        { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: insights.properties.ConnectionString }
-        { name: 'ApplicationInsightsAgent_EXTENSION_VERSION', value: '~3' }
-        { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'false' }
-        { name: 'NEXT_TELEMETRY_DISABLED', value: '1' }
-        // The Entra client secret for App Service Authentication is stored ONLY in Key Vault (set by an administrator).
-        { name: 'MICROSOFT_PROVIDER_AUTHENTICATION_SECRET', value: '@Microsoft.KeyVault(VaultName=${names.vault};SecretName=${entraSecretName})' }
-      ]
     }
+  }
+}
+
+// App settings live in a child resource (not siteConfig.appSettings) so FCC_PUBLIC_ORIGIN can use the default host
+// name Azure actually assigned. Depending on the subscription and region that is <name>.azurewebsites.net or a unique
+// <name>-<hash>.<region>-01.azurewebsites.net, so it is never built from the site name. This resource is the complete set.
+var effectivePublicOrigin = empty(publicOrigin) ? 'https://${site.properties.defaultHostName}' : publicOrigin
+
+resource siteAppSettings 'Microsoft.Web/sites/config@2023-12-01' = {
+  parent: site
+  name: 'appsettings'
+  properties: {
+    APP_MODE: 'pilot'
+    FCC_BUILD_TARGET: 'pilot'
+    NODE_ENV: 'production'
+    FCC_AUTH_MODE: 'appservice'
+    FCC_ENTRA_TENANT_ID: tenantId
+    FCC_AZURE_SUBSCRIPTION_IDS: approvedSubscriptionIds
+    FCC_PUBLIC_ORIGIN: effectivePublicOrigin
+    FCC_ORG_LABEL: orgLabel
+    FCC_DB_DIALECT: 'mssql'
+    FCC_SQL_SERVER: '${names.sql}${environment().suffixes.sqlServerHostname}'
+    FCC_SQL_DATABASE: names.db
+    FCC_ADVISOR_CATEGORIES: advisorCategories
+    FCC_SYNC_INTERVAL_MINUTES: string(syncIntervalMinutes)
+    APPLICATIONINSIGHTS_CONNECTION_STRING: insights.properties.ConnectionString
+    ApplicationInsightsAgent_EXTENSION_VERSION: '~3'
+    SCM_DO_BUILD_DURING_DEPLOYMENT: 'false'
+    NEXT_TELEMETRY_DISABLED: '1'
+    // The Entra client secret for App Service Authentication is stored ONLY in Key Vault (set by an administrator).
+    MICROSOFT_PROVIDER_AUTHENTICATION_SECRET: '@Microsoft.KeyVault(VaultName=${names.vault};SecretName=${entraSecretName})'
   }
 }
 
@@ -266,6 +275,7 @@ resource ftpCredentials 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@
 resource auth 'Microsoft.Web/sites/config@2023-12-01' = {
   parent: site
   name: 'authsettingsV2'
+  dependsOn: [ siteAppSettings ]
   properties: {
     platform: { enabled: true }
     globalValidation: {

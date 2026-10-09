@@ -71,7 +71,7 @@ Changes: dependency remediation (DEP-1, DEP-4), CI audit gate raised to `high`, 
 |---|---|
 | `npm ci` from a clean `node_modules`; `npm ls` | success; dependency tree valid |
 | `npm run typecheck` / `npm run lint` | pass / pass (0 warnings) |
-| `npm test` | **18 files, 242/242 passed** (including the new `tests/pilot/deploy-scripts.test.ts`, 36 tests: confirmation/branch gate, variable validation, signed-in context, workload tag, FinThrive deny rules, `FCC_PUBLIC_ORIGIN` check, missing `az`, health retry/failure, sign-in gate, preflight STOP/GO paths with a stubbed Azure CLI, workflow/template contracts) |
+| `npm test` | **18 files, 249/249 passed** (including the new `tests/pilot/deploy-scripts.test.ts`, 43 tests: confirmation/branch gate, variable validation, signed-in context, workload tag, FinThrive deny rules, `FCC_PUBLIC_ORIGIN` must be an exact https origin on one of the app's actual host names (legacy-vs-unique host name, http, path, port, unbound custom domain), missing `az`, health retry/failure, sign-in gate, preflight STOP/GO paths with a stubbed Azure CLI, workflow/template contracts) |
 | `npm run validate:demo` | **READY 9/9** |
 | `npm run validate:pilot` (`BICEP_BIN` resolved by the CI step itself) | **PASSED 19/19** |
 | Bicep 0.48.1 `build` + `lint`, both templates | pass, no warnings |
@@ -80,7 +80,8 @@ Changes: dependency remediation (DEP-1, DEP-4), CI audit gate raised to `high`, 
 | Compiled CSS before/after the overrides (pilot and demo) | byte-identical (SHA-256 `66cc4bfb…`) |
 | `check-deployment.mjs` against the real standalone pilot server (local fixtures) | pass: health 200 and anonymous `/overview` → 307 to `/.auth/login/aad` |
 | actionlint 1.7.12 with ShellCheck 0.11.0, both workflows | clean |
-| Mutation checks (the guard accepting `deploy`, the post-deploy check skipping the sign-in gate) | both caught by the new tests |
+| Mutation checks (the guard accepting `deploy`, the post-deploy check skipping the sign-in gate, the origin check accepting http) | all caught by the new tests |
+| Compiled `main.bicep` | `FCC_PUBLIC_ORIGIN` = `reference(site).defaultHostName` when `publicOrigin` is empty; no `azurewebsites.net` literal; same 18 app settings as before |
 | `deploy-pilot` against Azure, `preflight:azure` against a real subscription | **Not run** (no Azure access; deliberately out of scope) |
 
 ## 4. Live Azure verification
@@ -113,7 +114,7 @@ The review was done by a separate reviewer with no part in writing the code. It 
 | R-9 | Low | `workflow/rules.ts` | 13-digit amounts overflow BIGINT micros (500 instead of 400) | Code | Capped at 12 integer digits | New test ✓ |
 | R-10 | **High** (production dependency) + moderate | dependencies | `npm audit` findings: see the register in §5a (DEP-1 … DEP-4) | Audit output (§3, §3a, §3b) | **DEP-1 and DEP-4 remediated** with scoped npm `overrides` (no major upgrade of a direct dependency; compiled CSS byte-identical). DEP-2 and DEP-3 have **no patched release**; DEP-3 call-site review completed. **No formal risk acceptance has been recorded** for DEP-2 or DEP-3 | **Partly closed**: production has no high/critical findings; DEP-2/DEP-3 decisions pending (§5a) |
 | R-11 | Low | `deploy-pilot.yml` | Tag-pinned actions; any branch could be dispatched; a wrong confirmation silently skipped the run; health check used a guessed `<name>.azurewebsites.net` URL; no check of the signed-in context or target | Code | Actions pinned to full commit SHAs. `guard` job fails (not skips) unless `confirm` = `DEPLOY` on `main`. Variables validated before login. Signed-in tenant and subscription, workload tag, FinThrive deny rules and `FCC_PUBLIC_ORIGIN` checked against the real web app. Post-deployment check uses the app's actual default host name and also verifies the Entra sign-in redirect. Concurrency limited to one deployment | `tests/pilot/deploy-scripts.test.ts` (stubbed `az`), actionlint 1.7.12 clean; **workflow not run against Azure** |
-| R-12 | Low | `main.bicep`, `config.ts` | Origin fixed to `*.azurewebsites.net`; sovereign-cloud SQL hosts accepted but ARM public only | Code | `publicOrigin` parameter; SQL host restricted to public cloud; scope documented | Bicep build ✓, config test ✓ |
+| R-12 | Low (raised: every change would be rejected if the host name differs) | `main.bicep`, `config.ts` | Default origin was built as `https://<site-name>.azurewebsites.net`, which is wrong when App Service assigns a unique default host name; sovereign-cloud SQL hosts accepted but ARM public only | Code | App settings moved to a `sites/config appsettings` child resource so the default `FCC_PUBLIC_ORIGIN` uses `site.properties.defaultHostName` (the name Azure assigned); `deploy-pilot` refuses a non-https or non-bare origin, or one that is not one of the app's host names; `publicOrigin` remains for custom domains; SQL host restricted to public cloud | Bicep build/lint ✓; compiled ARM contains no `azurewebsites.net` literal; deploy-guard tests ✓. **Live host-name behaviour not verified** (no deployment) |
 | R-13 | Low | `main.bicep` | SQL allows Azure services; public endpoints | Code | **Accepted for pilot** (Entra-only SQL, TLS, auditing); private networking recommended for production | Documented in SECURITY §6 |
 | R-14 | Low | `http/api.ts` | Body read fully before the size check when chunked | Code | Streaming read with a 32 KB cap | API tests ✓ |
 | R-15 | Low | auth / workflow | Role revocation takes effect at next sign-in; owners can reject or defer alone | Code | **Documented**; policy decision D3 | — |

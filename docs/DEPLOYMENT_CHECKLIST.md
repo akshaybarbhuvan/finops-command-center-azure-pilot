@@ -89,7 +89,7 @@ Verification is always a read-only look by someone other than the person who mad
 | **G1 Approvals** | D1, D2, D4, D5, D6 and DEP-2/DEP-3 decisions recorded (§2) | Signed records; readiness report §5a filled in |
 | **G2 Identity and GitHub** | H1–H4 and H9 done and independently verified | Screenshots / read-only `gh` and portal checks |
 | **G3 Infrastructure preview** | `npm run preflight:azure` returns GO; the what-if shows only Create (first run) or reviewed Modify lines, no Delete, nothing outside the resource group; reviewed and approved by the cloud administrator **and** one reviewer | Saved `fcc-preflight-what-if.json`, reviewer names |
-| **G4 Infrastructure** | `az deployment group create` succeeded; outputs recorded; `webAppUrl` checked against `publicOrigin` (DEPLOYMENT step 6) | Deployment name `fcc-pilot-infra`; outputs |
+| **G4 Infrastructure** | `az deployment group create` succeeded; outputs recorded; `publicOriginConfigured` equals `webAppUrl` (or the bound custom domain) (DEPLOYMENT step 6) | Deployment name `fcc-pilot-infra`; outputs |
 | **G5 Access and data** | H5, H10, H12, H13, H14 done; Key Vault reference resolved; migrations applied; firewall rule removed | Portal checks; migration output |
 | **G6 Application deploy** | `deploy-pilot` run on `main`, approved in the `pilot` environment; all jobs green, including the post-deployment checks (liveness **and** sign-in redirect) | Run URL |
 | **G7 Live acceptance** | PILOT_RUNBOOK §2 A1–A17 pass or have an agreed owner; cost reconciles; full workflow with independent verification; isolation holds | Results table in the readiness report; then D7 |

@@ -146,11 +146,37 @@ describe("deploy-guard target (after azure/login)", () => {
     expect(r.code).toBe(1);
     expect(r.out).toContain("FinThrive");
   });
-  posixOnly("fails when FCC_PUBLIC_ORIGIN is not one of the web app's real host names", async () => {
-    const r = await run("deploy-guard.mjs", ["target"], { ...VARS, ...azStub({ "account show": account, "webapp show": site, "webapp config appsettings list": { stdout: JSON.stringify("https://fcc-pilot-abc123.azurewebsites.net") } }) });
+  const withOrigin = (value: string, siteOver: Record<string, unknown> = {}) =>
+    azStub({ "account show": account, "webapp show": { stdout: { ...site.stdout, ...siteOver } }, "webapp config appsettings list": { stdout: JSON.stringify(value) } });
+  posixOnly("fails when FCC_PUBLIC_ORIGIN is the legacy <name>.azurewebsites.net but Azure assigned a unique host name", async () => {
+    const r = await run("deploy-guard.mjs", ["target"], { ...VARS, ...withOrigin("https://fcc-pilot-abc123.azurewebsites.net") });
     expect(r.code).toBe(1);
-    expect(r.out).toContain("FCC_PUBLIC_ORIGIN (https://fcc-pilot-abc123.azurewebsites.net) is not a host name");
-    expect(r.out).toContain("Set the Bicep parameter publicOrigin");
+    expect(r.out).toContain("does not match the web app's actual host names (fcc-pilot-abc123-h7d.westeurope-01.azurewebsites.net)");
+    expect(r.out).toContain("Leave the Bicep parameter publicOrigin empty");
+  });
+  posixOnly.each([
+    ["http scheme", `http://${"fcc-pilot-abc123-h7d.westeurope-01.azurewebsites.net"}`],
+    ["a path", "https://fcc-pilot-abc123-h7d.westeurope-01.azurewebsites.net/app"],
+    ["an empty value", ""],
+  ])("fails when FCC_PUBLIC_ORIGIN has %s (the app would reject every change)", async (_label, value) => {
+    const r = await run("deploy-guard.mjs", ["target"], { ...VARS, ...withOrigin(value) });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("must be exactly an https origin");
+  });
+  posixOnly("fails when FCC_PUBLIC_ORIGIN has a non-default port (App Service serves 443 only)", async () => {
+    const r = await run("deploy-guard.mjs", ["target"], { ...VARS, ...withOrigin(`https://${HOST}:8443`) });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("does not match the web app's actual host names");
+  });
+  posixOnly("accepts a trailing slash and a bound custom domain", async () => {
+    expect((await run("deploy-guard.mjs", ["target"], { ...VARS, ...withOrigin(`https://${HOST}/`) })).code).toBe(0);
+    const custom = await run("deploy-guard.mjs", ["target"], { ...VARS, ...withOrigin("https://fcc.example.com", { hostNames: [HOST, "fcc.example.com"] }) });
+    expect(custom.code).toBe(0);
+  });
+  posixOnly("rejects a custom domain that is not bound to the web app", async () => {
+    const r = await run("deploy-guard.mjs", ["target"], { ...VARS, ...withOrigin("https://fcc.example.com") });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("does not match the web app's actual host names");
   });
   posixOnly("reports a missing web app or missing permission clearly", async () => {
     const r = await run("deploy-guard.mjs", ["target"], { ...VARS, ...azStub({ "account show": account, "webapp show": { status: 3, stderr: "ERROR: (ResourceNotFound)" } }) });
@@ -343,5 +369,11 @@ describe("deployment contracts", () => {
     expect(lib).toContain('WORKLOAD_TAG_VALUE = "finops-command-center-azure-pilot"');
     expect(bicep).toContain("union(tags, { 'fcc-workload': 'finops-command-center-azure-pilot' })");
     expect(bicep.match(/^ {2}tags: resourceTags$/gm)).toHaveLength(7);
+  });
+  it("main.bicep derives FCC_PUBLIC_ORIGIN from the Azure-assigned host name, never from the site name", () => {
+    expect(bicep).toContain("var effectivePublicOrigin = empty(publicOrigin) ? 'https://${site.properties.defaultHostName}' : publicOrigin");
+    expect(bicep).toMatch(/^ {4}FCC_PUBLIC_ORIGIN: effectivePublicOrigin$/m);
+    expect(bicep).not.toMatch(/\$\{names\.site\}\.azurewebsites\.net/);
+    expect(bicep).not.toMatch(/siteConfig: \{[^}]*appSettings/);
   });
 });
