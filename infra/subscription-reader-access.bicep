@@ -7,6 +7,8 @@
 targetScope = 'subscription'
 
 @description('Object ID of the FCC web app system-assigned managed identity (output webAppPrincipalId of main.bicep).')
+@minLength(36)
+@maxLength(36)
 param principalId string
 
 var reader = 'acdd72a7-3385-48ef-bd42-f606fba81ae7'

@@ -15,6 +15,9 @@ coverage/
 *.pem
 *.pfx
 *.publishsettings
+# filled-in deployment parameters and preflight output (tenant/subscription IDs; keep out of Git)
+infra/main.parameters.json
+fcc-preflight-what-if*.json
 # local pilot databases
 .data/
 *.db

@@ -54,27 +54,31 @@
 - Queries are pinned to the configured subscription IDs. No user input can change scope.
 - Azure SQL: Entra-only authentication (no SQL logins or passwords). The app user has read/write only, no DDL, and UPDATE/DELETE are denied on `audit_events`, `rec_events`, `evidence` and `verifications`. Migrations run separately with the SQL admin group.
 - Separate deployment identity (GitHub OIDC, Website Contributor on the web app) from the runtime identity.
+- Deployment target protection: every taggable resource from `infra/main.bicep` carries `fcc-workload=finops-command-center-azure-pilot`. `deploy-pilot.yml` refuses a web app without that tag, a signed-in tenant or subscription that differs from the configured variables, and any subscription, resource group or web app whose name matches the separate FinThrive pilot. `npm run preflight:azure` applies the same rules (plus `FCC_DENY_SUBSCRIPTION_IDS`) before an infrastructure deployment, and stops on any what-if deletion or any change outside the pilot resource group.
+- Operations that grant access to other identities (Key Vault role, subscription Reader/Cost Management Reader, Website Contributor, the database grant, the federated credential) are listed separately in AZURE_SETUP §4.2 and need their own approval.
 
 ## 5. Secrets
 
 - None in source, templates or CI. `.env*` (except the two example templates), `*.pem`, `*.pfx`, local databases and ZIPs are git-ignored.
 - The only application secret is the Entra client secret for App Service Authentication, stored in Key Vault (RBAC, soft delete, purge protection).
-- GitHub uses OIDC; no Azure secret is stored in GitHub.
+- GitHub uses OIDC; no Azure secret is stored in GitHub. The deploy workflow pins every action to a full commit SHA and requests `id-token: write` only in the approved `pilot` environment job.
+- Supply chain: CI and the deploy build fail on any **high or critical** advisory in production dependencies (`npm audit --omit=dev --audit-level=high`).
 
 ## 6. Review results and residual risks
 
-The independent review is recorded in [PILOT_READINESS_REPORT.md](PILOT_READINESS_REPORT.md) §5. Residual risks accepted for a controlled pilot (owners in the report):
+The independent review is recorded in [PILOT_READINESS_REPORT.md](PILOT_READINESS_REPORT.md) §5. The residual risks below are **proposed** for a controlled pilot. **None is formally accepted yet**: acceptance is decision D5 (and D8 for dependencies) by the security owner and business sponsor, recorded in DEPLOYMENT_CHECKLIST §2.
 
-| Risk | Why accepted / mitigation |
+| Risk | Mitigation / proposed rationale |
 |---|---|
 | Azure SQL allows "Azure services" through its firewall (`sqlAllowAzureServices=true`), i.e. any Azure-hosted client can attempt to connect | Entra-only authentication; TLS; auditing to Log Analytics. Production: VNet integration and a private endpoint |
 | Key Vault and web app use public endpoints | RBAC; App Service Authentication; production: private networking |
 | In-memory rate limiting is per instance | Pilot runs one instance; use Azure Front Door / API Management for production |
 | `style-src 'unsafe-inline'` in the CSP | Required by chart/inline styles; script execution remains nonce-restricted |
-| **Open dependency vulnerabilities** (not fixed; **not yet formally accepted**). Full tree: 14 (8 high, 6 moderate). Production: 5 (1 high, 4 moderate). Production high: `postcss` 8.4.31 nested in `next` 15.5.27, which **is included in the deployed package** (runtime use not established). Production moderate: `sprintf-js` via `mssql`/`tedious`, used at runtime. Build/dev only: `braces` (high), `postcss-selector-parser` (moderate) | FCC processes no user-supplied CSS, and the inspected driver call sites use fixed format strings. `npm audit fix` did not resolve them; the remaining fixes are breaking upgrades. **Formal risk acceptance or remediation is required before deployment.** Register, owners and next actions: PILOT_READINESS_REPORT §5a |
+| **Open dependency vulnerabilities** (not fixed upstream; **not formally accepted**). Production: `sprintf-js` 1.1.3 via `mssql`/`tedious` (moderate, DEP-3). Every call site in the driver uses a fixed format string, so the advisory's attacker-controlled format string is not reachable; no patched release exists. Build/dev only: `braces` 3.0.3 (high, DEP-2), not in the deployed package; no patched release exists. **Remediated:** DEP-1 (`postcss` in Next.js, overridden to 8.5.29) and DEP-4 (`postcss-selector-parser` overridden to 7.1.6) | Production `npm audit` has no high or critical findings and CI enforces that. **Formal decision on DEP-2 and DEP-3 required before deployment** (PILOT_READINESS_REPORT §5a) |
 | Entra client secret expiry | Calendar rotation (OPERATIONS.md); consider certificate or federated credentials later |
 | Azure SQL code path not yet executed against a real database | Must pass DEPLOYMENT step 9 before go-live |
 | Verified savings are FinOps-attested (reviewer-entered figures, not reconciled with billing); one independent reviewer suffices | Separation of duties enforced; figures, windows, method, source reference and reviewer are audited and append-only. A second approver is a policy decision (LEADER_HANDOFF D3) |
 | Role changes in Entra take effect at the user's next sign-in (App Service session); owner eligibility uses the roles recorded at last sign-in | Revoke access by removing the app assignment and ending sessions; review assignments monthly |
 | Deployment identity (Website Contributor) can change app settings and authentication | `pilot` environment with required reviewers, restricted to `main`; OIDC only |
-| GitHub Actions pinned to tags, not commit SHAs | Pin to SHAs when the repository is created |
+| `ci.yml` actions pinned to major-version tags (the privileged `deploy-pilot.yml` is SHA-pinned) | `ci` has read-only permissions and no Azure access; pin to SHAs when convenient |
+| Branch protection, `pilot` environment reviewers and OIDC federation are external settings the repository cannot enforce | DEPLOYMENT_CHECKLIST §3 H1–H5 must be configured and independently verified (gate G2) |

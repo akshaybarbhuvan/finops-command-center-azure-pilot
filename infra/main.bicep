@@ -9,7 +9,7 @@ targetScope = 'resourceGroup'
 @description('Azure region for all resources. Defaults to the resource group location.')
 param location string = resourceGroup().location
 
-@description('Short lowercase prefix for resource names, e.g. fcc-pilot.')
+@description('Short prefix for resource names, e.g. fcc-pilot: lowercase letters, digits and single hyphens, starting with a letter (used in Key Vault, SQL server and web app names). Checked by npm run preflight:azure.')
 @minLength(3)
 @maxLength(16)
 param namePrefix string
@@ -50,7 +50,7 @@ param syncIntervalMinutes int = 360
 @description('Advisor categories to ingest (comma separated).')
 param advisorCategories string = 'Cost'
 
-@description('Public https origin users browse to, e.g. https://fcc.contoso.com. Leave empty to use https://<web-app-name>.azurewebsites.net. Must match exactly, or every change is rejected as cross-site.')
+@description('Public https origin users browse to when a custom domain is used, e.g. https://fcc.contoso.com. Leave empty to use the default host name that Azure assigns to the web app (read from the deployed site, not built from its name). Must match exactly, or every change is rejected as cross-site.')
 param publicOrigin string = ''
 
 @description('Display label shown in the header (generic; do not include confidential names unless approved).')
@@ -74,6 +74,12 @@ param budgetContactEmails array = []
 @description('Log Analytics retention in days.')
 param logRetentionDays int = 30
 
+@description('Additional tags for every taggable resource (e.g. cost center, owner). The fcc-workload tag is always set.')
+param tags object = {}
+
+// deploy-pilot.yml and npm run preflight:azure refuse targets without this tag (protects other workloads).
+var resourceTags = union(tags, { 'fcc-workload': 'finops-command-center-azure-pilot' })
+
 var suffix = uniqueString(resourceGroup().id)
 var names = {
   logs: '${namePrefix}-logs'
@@ -90,6 +96,7 @@ var entraSecretName = 'entra-auth-client-secret'
 resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: names.logs
   location: location
+  tags: resourceTags
   properties: {
     sku: { name: 'PerGB2018' }
     retentionInDays: logRetentionDays
@@ -99,6 +106,7 @@ resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
 resource insights 'Microsoft.Insights/components@2020-02-02' = {
   name: names.insights
   location: location
+  tags: resourceTags
   kind: 'web'
   properties: {
     Application_Type: 'web'
@@ -110,6 +118,7 @@ resource insights 'Microsoft.Insights/components@2020-02-02' = {
 resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: names.vault
   location: location
+  tags: resourceTags
   properties: {
     tenantId: subscription().tenantId
     sku: { family: 'A', name: 'standard' }
@@ -124,6 +133,7 @@ resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: names.plan
   location: location
+  tags: resourceTags
   kind: 'linux'
   sku: { name: appServiceSku }
   properties: { reserved: true }
@@ -132,6 +142,7 @@ resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
 resource sql 'Microsoft.Sql/servers@2023-08-01-preview' = {
   name: names.sql
   location: location
+  tags: resourceTags
   properties: {
     version: '12.0'
     minimalTlsVersion: '1.2'
@@ -166,6 +177,7 @@ resource db 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
   parent: sql
   name: names.db
   location: location
+  tags: resourceTags
   sku: { name: sqlSkuName }
   properties: {
     requestedBackupStorageRedundancy: 'Local'
@@ -196,6 +208,7 @@ resource sqlAuditDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-p
 resource site 'Microsoft.Web/sites@2023-12-01' = {
   name: names.site
   location: location
+  tags: resourceTags
   kind: 'app,linux'
   identity: { type: 'SystemAssigned' }
   properties: {
@@ -212,28 +225,38 @@ resource site 'Microsoft.Web/sites@2023-12-01' = {
       http20Enabled: true
       healthCheckPath: '/api/health'
       remoteDebuggingEnabled: false
-      appSettings: [
-        { name: 'APP_MODE', value: 'pilot' }
-        { name: 'FCC_BUILD_TARGET', value: 'pilot' }
-        { name: 'NODE_ENV', value: 'production' }
-        { name: 'FCC_AUTH_MODE', value: 'appservice' }
-        { name: 'FCC_ENTRA_TENANT_ID', value: tenantId }
-        { name: 'FCC_AZURE_SUBSCRIPTION_IDS', value: approvedSubscriptionIds }
-        { name: 'FCC_PUBLIC_ORIGIN', value: empty(publicOrigin) ? 'https://${names.site}.azurewebsites.net' : publicOrigin }
-        { name: 'FCC_ORG_LABEL', value: orgLabel }
-        { name: 'FCC_DB_DIALECT', value: 'mssql' }
-        { name: 'FCC_SQL_SERVER', value: '${names.sql}${environment().suffixes.sqlServerHostname}' }
-        { name: 'FCC_SQL_DATABASE', value: names.db }
-        { name: 'FCC_ADVISOR_CATEGORIES', value: advisorCategories }
-        { name: 'FCC_SYNC_INTERVAL_MINUTES', value: string(syncIntervalMinutes) }
-        { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: insights.properties.ConnectionString }
-        { name: 'ApplicationInsightsAgent_EXTENSION_VERSION', value: '~3' }
-        { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'false' }
-        { name: 'NEXT_TELEMETRY_DISABLED', value: '1' }
-        // The Entra client secret for App Service Authentication is stored ONLY in Key Vault (set by an administrator).
-        { name: 'MICROSOFT_PROVIDER_AUTHENTICATION_SECRET', value: '@Microsoft.KeyVault(VaultName=${names.vault};SecretName=${entraSecretName})' }
-      ]
     }
+  }
+}
+
+// App settings live in a child resource (not siteConfig.appSettings) so FCC_PUBLIC_ORIGIN can use the default host
+// name Azure actually assigned. Depending on the subscription and region that is <name>.azurewebsites.net or a unique
+// <name>-<hash>.<region>-01.azurewebsites.net, so it is never built from the site name. This resource is the complete set.
+var effectivePublicOrigin = empty(publicOrigin) ? 'https://${site.properties.defaultHostName}' : publicOrigin
+
+resource siteAppSettings 'Microsoft.Web/sites/config@2023-12-01' = {
+  parent: site
+  name: 'appsettings'
+  properties: {
+    APP_MODE: 'pilot'
+    FCC_BUILD_TARGET: 'pilot'
+    NODE_ENV: 'production'
+    FCC_AUTH_MODE: 'appservice'
+    FCC_ENTRA_TENANT_ID: tenantId
+    FCC_AZURE_SUBSCRIPTION_IDS: approvedSubscriptionIds
+    FCC_PUBLIC_ORIGIN: effectivePublicOrigin
+    FCC_ORG_LABEL: orgLabel
+    FCC_DB_DIALECT: 'mssql'
+    FCC_SQL_SERVER: '${names.sql}${environment().suffixes.sqlServerHostname}'
+    FCC_SQL_DATABASE: names.db
+    FCC_ADVISOR_CATEGORIES: advisorCategories
+    FCC_SYNC_INTERVAL_MINUTES: string(syncIntervalMinutes)
+    APPLICATIONINSIGHTS_CONNECTION_STRING: insights.properties.ConnectionString
+    ApplicationInsightsAgent_EXTENSION_VERSION: '~3'
+    SCM_DO_BUILD_DURING_DEPLOYMENT: 'false'
+    NEXT_TELEMETRY_DISABLED: '1'
+    // The Entra client secret for App Service Authentication is stored ONLY in Key Vault (set by an administrator).
+    MICROSOFT_PROVIDER_AUTHENTICATION_SECRET: '@Microsoft.KeyVault(VaultName=${names.vault};SecretName=${entraSecretName})'
   }
 }
 
@@ -252,6 +275,7 @@ resource ftpCredentials 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@
 resource auth 'Microsoft.Web/sites/config@2023-12-01' = {
   parent: site
   name: 'authsettingsV2'
+  dependsOn: [ siteAppSettings ]
   properties: {
     platform: { enabled: true }
     globalValidation: {
@@ -336,6 +360,8 @@ resource budget 'Microsoft.Consumption/budgets@2023-11-01' = if (deployBudget) {
 output webAppName string = site.name
 @description('Public URL. Add <url>/.auth/login/aad/callback as a redirect URI on the Entra app registration.')
 output webAppUrl string = 'https://${site.properties.defaultHostName}'
+@description('FCC_PUBLIC_ORIGIN as configured. Must equal webAppUrl (or the custom domain); if App Service assigned a different default host name, set publicOrigin and redeploy (docs/DEPLOYMENT.md step 6).')
+output publicOriginConfigured string = effectivePublicOrigin
 @description('Object ID of the web app managed identity. Grant it read-only access per approved subscription with subscription-reader-access.bicep.')
 output webAppPrincipalId string = site.identity.principalId
 @description('Azure SQL server host name.')
