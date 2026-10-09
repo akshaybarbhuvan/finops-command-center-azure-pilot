@@ -26,7 +26,14 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install Bicep CLI
-        run: az bicep install && echo "BICEP_BIN=$HOME/.azure/bin/bicep" >> "$GITHUB_ENV"
+        # On GitHub-hosted runners Bicep is preinstalled on PATH, and `az bicep install` then exits 0 without
+        # creating ~/.azure/bin/bicep (bicep.use_binary_from_path=if_found_in_ci). Resolve the binary that exists.
+        run: |
+          az bicep install
+          if [ -x "$HOME/.azure/bin/bicep" ]; then BICEP_BIN="$HOME/.azure/bin/bicep"; else BICEP_BIN="$(command -v bicep)"; fi
+          if [ -z "$BICEP_BIN" ] || [ ! -x "$BICEP_BIN" ]; then echo "::error::Bicep CLI not found after az bicep install"; exit 1; fi
+          "$BICEP_BIN" --version
+          echo "BICEP_BIN=$BICEP_BIN" >> "$GITHUB_ENV"
       - name: Demo build and validation (synthetic data, unchanged)
         run: npm run validate:demo
       - name: Pilot validation (type check, lint, tests, Bicep, pilot build, bundle scan, server smoke tests)
