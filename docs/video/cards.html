@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>FinOps Command Center — Video Cards</title>
+<style>
+  :root { --ink: #0B1220; --ink2: #121B2E; --brand: #5B82F5; --teal: #0EA5A4; --muted: #94A3B8; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #000; font-family: Inter, "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; }
+  .card { width: 1920px; height: 1080px; position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff;
+          background: radial-gradient(1200px 700px at 50% 40%, #16213A 0%, var(--ink) 60%, #070B14 100%); }
+  .card + .card { margin-top: 40px; }
+  .grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px); background-size: 64px 64px; mask-image: radial-gradient(circle at 50% 45%, #000 0%, transparent 70%); }
+  .mark { width: 96px; height: 96px; margin-bottom: 44px; }
+  h1 { font-size: 84px; font-weight: 700; letter-spacing: .12em; }
+  .sub { margin-top: 26px; font-size: 34px; font-weight: 400; color: #CBD5E1; letter-spacing: .01em; }
+  .rule { width: 120px; height: 3px; margin: 48px 0 0; background: linear-gradient(90deg, var(--brand), var(--teal)); border-radius: 3px; }
+  .flow { margin-top: 34px; display: flex; align-items: center; gap: 26px; font-size: 40px; font-weight: 500; color: #E2E8F0; }
+  .flow .arrow { color: var(--brand); font-weight: 300; }
+  .flow .last { color: #5EEAD4; font-weight: 600; }
+  .badge { position: absolute; bottom: 72px; display: flex; align-items: center; gap: 14px; font-size: 20px; font-weight: 600; letter-spacing: .18em; color: var(--muted);
+           border: 1px solid rgba(148,163,184,.35); border-radius: 999px; padding: 12px 26px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--teal); }
+</style>
+</head>
+<body>
+  <section class="card" id="title">
+    <div class="grid"></div>
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5B82F5"/><stop offset="1" stop-color="#0EA5A4"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#g1)"/><path d="M9 21.5V10.5h9" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M9 16h6" stroke="white" stroke-width="2.4" stroke-linecap="round" fill="none"/><path d="M19 21.5l4-5-4-5" stroke="white" stroke-opacity=".85" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+    <h1>FINOPS COMMAND CENTER</h1>
+    <div class="sub">Enterprise FinOps Governance &amp; Optimization</div>
+    <div class="rule"></div>
+    <div class="badge"><span class="dot"></span>LOCAL DEMO &nbsp;|&nbsp; ILLUSTRATIVE DATA</div>
+  </section>
+  <section class="card" id="end">
+    <div class="grid"></div>
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5B82F5"/><stop offset="1" stop-color="#0EA5A4"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#g2)"/><path d="M9 21.5V10.5h9" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M9 16h6" stroke="white" stroke-width="2.4" stroke-linecap="round" fill="none"/><path d="M19 21.5l4-5-4-5" stroke="white" stroke-opacity=".85" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+    <h1>FINOPS COMMAND CENTER</h1>
+    <div class="flow"><span>Visibility</span><span class="arrow">→</span><span>Accountability</span><span class="arrow">→</span><span>Optimization</span><span class="arrow">→</span><span class="last">Realized Value</span></div>
+    <div class="rule"></div>
+    <div class="badge"><span class="dot"></span>LOCAL DEMO &nbsp;|&nbsp; ILLUSTRATIVE DATA</div>
+  </section>
+</body>
+</html>

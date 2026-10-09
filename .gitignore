@@ -1,0 +1,34 @@
+# dependencies
+node_modules/
+# build output
+.next/
+.next-pilot/
+out/
+dist/
+build/
+coverage/
+# env & secrets
+.env
+.env.*
+!.env.example
+!.env.pilot.example
+*.pem
+*.pfx
+*.publishsettings
+# local pilot databases
+.data/
+*.db
+*.db-wal
+*.db-shm
+# packaged artifacts
+*.zip
+# logs
+logs/
+*.log
+npm-debug.log*
+# misc
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
+FINOPS_COMMAND_CENTER_LOCAL_DEMO/
+FINOPS_COMMAND_CENTER_LOCAL_DEMO.zip

@@ -1,0 +1,179 @@
+1
+00:00:05,000 --> 00:00:10,175
+Most organizations can tell you what they spend in the cloud.
+
+2
+00:00:10,225 --> 00:00:17,300
+Far fewer can show who is accountable for reducing it, and how much of that
+
+3
+00:00:17,350 --> 00:00:18,725
+reduction is real.
+
+4
+00:00:18,775 --> 00:00:22,050
+That is what FinOps Command Center does.
+
+5
+00:00:22,100 --> 00:00:27,750
+This is a local demonstration on illustrative data, with a simulated sign-in.
+
+6
+00:00:33,000 --> 00:00:36,068
+This is the leadership view.
+
+7
+00:00:36,118 --> 00:00:41,056
+We run at roughly $12.2 million a month.
+
+8
+00:00:41,106 --> 00:00:49,785
+There is $19.3 million a year in open savings opportunity, and $2.76 million already
+
+9
+00:00:49,835 --> 00:00:50,409
+verified.
+
+10
+00:00:50,459 --> 00:00:52,279
+Verified, not estimated.
+
+11
+00:00:52,329 --> 00:00:59,138
+But only 57% of that open opportunity has an accountable owner.
+
+12
+00:00:59,188 --> 00:01:04,750
+More than $8 million a year belongs to nobody.
+
+13
+00:01:05,000 --> 00:01:12,036
+Leadership can drill from product, to owner, to the individual recommendation, with
+
+14
+00:01:12,086 --> 00:01:16,169
+estimated and verified savings always shown separately.
+
+15
+00:01:16,219 --> 00:01:20,893
+In SAP, the largest unowned item is REC-2041:
+
+16
+00:01:20,943 --> 00:01:29,750
+one point oh $8 million a year, validated, with 6 days left on its SLA.
+
+17
+00:01:40,000 --> 00:01:44,801
+FinOps now takes ownership of the pipeline.
+
+18
+00:01:44,851 --> 00:01:48,959
+FinOps routes and tracks the work;
+
+19
+00:01:49,009 --> 00:01:53,117
+it does not approve technical changes.
+
+20
+00:01:53,167 --> 00:02:00,048
+REC-2041 goes to Priya Raman, who owns the SAP platform.
+
+21
+00:02:00,098 --> 00:02:09,750
+That starts the SLA clock, and the decision is recorded in the audit trail.
+
+22
+00:02:20,000 --> 00:02:23,036
+Now Priya signs in.
+
+23
+00:02:23,086 --> 00:02:34,607
+Her queue holds only the work assigned to her, with this item at the top.
+
+24
+00:02:34,657 --> 00:02:43,093
+She accepts it and opens a ticket, linked to the record.
+
+25
+00:02:43,143 --> 00:02:46,950
+She submits a remediation plan:
+
+26
+00:02:47,000 --> 00:02:55,436
+a rolling resize in the weekend window, with a rollback path.
+
+27
+00:02:55,486 --> 00:03:05,464
+Change approval stays with her change process, so she records the approval reference
+
+28
+00:03:05,514 --> 00:03:06,236
+here;
+
+29
+00:03:06,286 --> 00:03:11,636
+in this demonstration that step is simulated.
+
+30
+00:03:11,686 --> 00:03:22,436
+Once the change is made, she submits implementation evidence, and the item moves to
+
+31
+00:03:22,486 --> 00:03:24,750
+FinOps for verification.
+
+32
+00:03:35,000 --> 00:03:39,265
+FinOps signs back in and verifies the savings.
+
+33
+00:03:39,315 --> 00:03:45,198
+In production that check runs against billing data after the change;
+
+34
+00:03:45,248 --> 00:03:47,356
+here it is simulated.
+
+35
+00:03:47,406 --> 00:03:52,750
+Only now does an estimate count as a realized saving.
+
+36
+00:04:03,000 --> 00:04:11,676
+Back in the leadership view, verified savings have moved from $2.76 million to $3.85
+
+37
+00:04:11,726 --> 00:04:15,415
+million a year, within this demonstration.
+
+38
+00:04:15,465 --> 00:04:24,141
+Leadership can trace that number to the product, to the accountable owner, and to
+
+39
+00:04:24,191 --> 00:04:29,750
+the record itself, with its ticket and its evidence.
+
+40
+00:04:30,000 --> 00:04:32,164
+That is the process:
+
+41
+00:04:32,214 --> 00:04:37,145
+find the highest-value opportunities, assign clear accountability, let engineering
+
+42
+00:04:37,195 --> 00:04:44,341
+deliver through its own change process, and count savings only once they are
+
+43
+00:04:44,391 --> 00:04:44,894
+verified.
+
+44
+00:04:44,944 --> 00:04:47,662
+The figures today are illustrative;
+
+45
+00:04:47,712 --> 00:04:53,750
+the operating model is what we would take into a pilot.

@@ -1,0 +1,32 @@
+FinOps Command Center - 5-Minute Executive Demo (narration)
+LOCAL DEMO | ILLUSTRATIVE DATA
+Timing basis: 140 words per minute
+
+[00:05-00:32] Opening | silent lead 0s, tail 4s | 48 words
+Most organizations can tell you what they spend in the cloud. Far fewer can show who is accountable for reducing it, and how much of that reduction is real. That is what FinOps Command Center does. This is a local demonstration on illustrative data, with a simulated sign-in.
+
+[00:32-01:05] Executive Overview | silent lead 1s, tail 0s | 61 words
+This is the leadership view. We run at roughly twelve point two million dollars a month. There is nineteen point three million a year in open savings opportunity, and two point seven six million already verified. Verified, not estimated. But only fifty-seven percent of that open opportunity has an accountable owner. More than eight million dollars a year belongs to nobody.
+
+[01:05-01:35] Opportunity and drill-down | silent lead 0s, tail 5s | 43 words
+Leadership can drill from product, to owner, to the individual recommendation, with estimated and verified savings always shown separately. In SAP, the largest unowned item is REC-2041: one point oh eight million dollars a year, validated, with six days left on its SLA.
+
+[01:35-02:15] FinOps assigns an owner | silent lead 5s, tail 5s | 43 words
+FinOps now takes ownership of the pipeline. FinOps routes and tracks the work; it does not approve technical changes. REC-2041 goes to Priya Raman, who owns the SAP platform. That starts the SLA clock, and the decision is recorded in the audit trail.
+
+[02:15-03:30] Engineering execution | silent lead 5s, tail 5s | 84 words
+Now Priya signs in. Her queue holds only the work assigned to her, with this item at the top. She accepts it and opens a ticket, linked to the record. She submits a remediation plan: a rolling resize in the weekend window, with a rollback path. Change approval stays with her change process, so she records the approval reference here; in this demonstration that step is simulated. Once the change is made, she submits implementation evidence, and the item moves to FinOps for verification.
+
+[03:30-03:58] FinOps verification | silent lead 5s, tail 5s | 33 words
+FinOps signs back in and verifies the savings. In production that check runs against billing data after the change; here it is simulated. Only now does an estimate count as a realized saving.
+
+[03:58-04:30] Executive outcome | silent lead 5s, tail 0s | 49 words
+Back in the leadership view, verified savings have moved from two point seven six to three point eight five million dollars a year, within this demonstration. Leadership can trace that number to the product, to the accountable owner, and to the record itself, with its ticket and its evidence.
+
+[04:30-04:55] Close | silent lead 0s, tail 1s | 43 words
+That is the process: find the highest-value opportunities, assign clear accountability, let engineering deliver through its own change process, and count savings only once they are verified. The figures today are illustrative; the operating model is what we would take into a pilot.
+
+Spoken words: 404
+Estimated narration time at 140 wpm: 2:53
+Planned silent interaction time (sign-in, log out, dialogs): 46s
+Title and end cards: 10s

@@ -1,0 +1,74 @@
+# Deploys the APPLICATION (not infrastructure) to the pilot web app.
+# - Manual trigger only; never runs on pull requests.
+# - Uses GitHub OIDC federation (no stored Azure secrets). Configure repository/environment VARIABLES:
+#     AZURE_CLIENT_ID (deployment identity), AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, PILOT_RESOURCE_GROUP, PILOT_WEBAPP_NAME
+# - The `pilot` GitHub environment must require reviewer approval (Settings → Environments → pilot).
+# - The deployment identity needs "Website Contributor" on the pilot web app. Note: that role can also change app
+#   settings and authentication configuration, so treat the identity and the `pilot` environment approvers as privileged.
+# - Actions are pinned to major-version tags; pin them to full commit SHAs when the repository is created.
+# Database migrations are a separate, explicit operator step (docs/DEPLOYMENT.md) and are NOT run here.
+name: deploy-pilot
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type DEPLOY to confirm deployment of this commit to the pilot web app
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # Only the protected default branch can be deployed. Also restrict the `pilot` environment to `main`
+    # (Settings → Environments → pilot → Deployment branches) so this holds even if the workflow file is edited.
+    if: github.event.inputs.confirm == 'DEPLOY' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck && npm run lint && npm test
+      - run: npm run build:pilot
+      - name: Package standalone server
+        run: |
+          cd .next-pilot/standalone
+          echo "${GITHUB_SHA}" > .fcc-version
+          zip -qr "$GITHUB_WORKSPACE/fcc-pilot-${GITHUB_SHA}.zip" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fcc-pilot-${{ github.sha }}
+          path: fcc-pilot-${{ github.sha }}.zip
+          retention-days: 30
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: pilot
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: fcc-pilot-${{ github.sha }}
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy package
+        run: az webapp deploy --resource-group "${{ vars.PILOT_RESOURCE_GROUP }}" --name "${{ vars.PILOT_WEBAPP_NAME }}" --src-path "fcc-pilot-${{ github.sha }}.zip" --type zip --async false
+      - name: Smoke test (anonymous liveness only)
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "https://${{ vars.PILOT_WEBAPP_NAME }}.azurewebsites.net/api/health") && [ "$code" = "200" ] && echo "healthy" && exit 0
+            sleep 10
+          done
+          echo "Health check failed" && exit 1

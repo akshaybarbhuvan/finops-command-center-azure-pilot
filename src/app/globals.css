@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --chart-1: #3461E8; /* indigo  - primary series / spend */
+  --chart-2: #0EA5A4; /* teal    - savings realized */
+  --chart-3: #F59E0B; /* amber   - forecast / attention */
+  --chart-4: #8B5CF6; /* violet */
+  --chart-5: #0EA5E9; /* sky */
+  --chart-6: #94A3B8; /* slate   - other */
+  color-scheme: light;
+}
+
+@layer base {
+  html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  body { @apply bg-canvas text-slate-900; font-feature-settings: "cv11", "ss01"; }
+  :focus-visible { @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-white; }
+  ::selection { @apply bg-brand-100; }
+}
+
+@layer components {
+  .num { font-variant-numeric: tabular-nums; }
+  .card { @apply rounded-xl border border-line bg-white shadow-card; }
+  .eyebrow { @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500; }
+  .link { @apply font-medium text-brand-600 hover:text-brand-700 hover:underline underline-offset-2; }
+  .input { @apply h-9 w-full rounded-lg border border-line bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100; }
+  .scrollbar-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { @apply rounded-full bg-slate-300; }
+  .skeleton { @apply relative overflow-hidden rounded-md bg-slate-200/70; }
+  .skeleton::after { content: ""; @apply absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/60 to-transparent; animation: shimmer 1.4s infinite; }
+}
+
+@keyframes shimmer { 100% { transform: translateX(100%); } }
+
+.recharts-tooltip-wrapper { outline: none; }
+.recharts-surface:focus { outline: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
+
+@media print {
+  aside, header, .no-print { display: none !important; }
+  main { padding: 0 !important; }
+  body { background: white; }
+  .card { box-shadow: none; break-inside: avoid; }
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "namePrefix": { "value": "fcc-pilot" },
+    "tenantId": { "value": "<ENTRA-TENANT-ID-GUID>" },
+    "entraClientId": { "value": "<APP-REGISTRATION-CLIENT-ID-GUID>" },
+    "approvedSubscriptionIds": { "value": "<SUBSCRIPTION-ID-1>,<SUBSCRIPTION-ID-2>" },
+    "sqlAdminGroupObjectId": { "value": "<ENTRA-GROUP-OBJECT-ID-FOR-SQL-ADMINS>" },
+    "sqlAdminGroupName": { "value": "<ENTRA-GROUP-DISPLAY-NAME>" },
+    "appServiceSku": { "value": "B1" },
+    "sqlSkuName": { "value": "S0" },
+    "syncIntervalMinutes": { "value": 360 },
+    "orgLabel": { "value": "Azure pilot" },
+    "deployBudget": { "value": false },
+    "budgetAmount": { "value": 200 },
+    "budgetStartDate": { "value": "<YYYY-MM-01>" },
+    "budgetContactEmails": { "value": [] }
+  }
+}
