@@ -18,7 +18,8 @@ const fail = (name, detail = "") => (results.push({ name, ok: false }), console.
 const step = (name, cmd, args, env = {}) => {
   const r = spawnSync(cmd, args, { encoding: "utf8", env: { ...process.env, ...env }, shell: process.platform === "win32" });
   if (r.status === 0) ok(name);
-  else fail(name, (r.stdout + r.stderr).trim().split("\n").slice(-6).join(" | "));
+  // r.error is set when the command could not be spawned (e.g. ENOENT); stdout/stderr are then undefined.
+  else fail(name, r.error ? `could not run ${cmd}: ${r.error.message}` : `${r.stdout ?? ""}${r.stderr ?? ""}`.trim().split("\n").slice(-6).join(" | "));
   return r.status === 0;
 };
 

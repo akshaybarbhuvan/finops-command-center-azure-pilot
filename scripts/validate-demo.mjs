@@ -17,7 +17,7 @@ const env = { ...process.env, NEXT_TELEMETRY_DISABLED: "1" };
 function step(name, cmd, args, extraEnv = {}) {
   const r = spawnSync(cmd, args, { stdio: "pipe", env: { ...env, ...extraEnv }, shell: process.platform === "win32", encoding: "utf8" });
   if (r.status === 0) ok(name);
-  else fail(name, (r.stdout + r.stderr).split("\n").filter(Boolean).slice(-8).join(" | "));
+  else fail(name, r.error ? `could not run ${cmd}: ${r.error.message}` : `${r.stdout ?? ""}${r.stderr ?? ""}`.split("\n").filter(Boolean).slice(-8).join(" | "));
   return r.status === 0;
 }
 
